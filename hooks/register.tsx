@@ -13,6 +13,7 @@ import {
   labelFor,
   matchTurn,
   mergeChange,
+  mergeSlices,
   noticeFor,
   patchText,
   planFromTodos,
@@ -85,9 +86,11 @@ function mergeFacts(
 ): SessionFacts {
   const breakdown = usage?.context.breakdown
   const compactAt = breakdown?.autoCompactThreshold
-  const slices = (breakdown?.categories ?? [])
-    .filter(category => category.kind === 'used' && category.tokens > 0)
-    .map(category => ({ name: category.name, tokens: category.tokens, color: category.color }))
+  const slices = mergeSlices(
+    (breakdown?.categories ?? [])
+      .filter(category => category.kind === 'used' && category.tokens > 0)
+      .map(category => ({ name: category.name, tokens: category.tokens, color: category.color })),
+  )
   return {
     ...current,
     branch,

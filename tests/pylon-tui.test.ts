@@ -12,6 +12,7 @@ import {
   spinnerLabel,
   turnParts,
   limitLevel,
+  mergeSlices,
   usageParts,
   withLabel,
 } from '../hooks/text'
@@ -87,6 +88,18 @@ describe('text helpers', () => {
       { text: '7d 12.5%', level: 'ok' },
     ])
     expect(usageParts(null, [])).toEqual([])
+  })
+
+  test('combines the MCP context slices into one', () => {
+    const slices = [
+      { name: 'MCP tools', tokens: 3000, color: 'cyan' },
+      { name: 'Messages', tokens: 9000, color: 'purple' },
+      { name: 'MCP server instructions', tokens: 500, color: 'blue' },
+    ]
+    expect(mergeSlices(slices)).toEqual([
+      { name: 'MCP', tokens: 3500, color: 'cyan' },
+      { name: 'Messages', tokens: 9000, color: 'purple' },
+    ])
   })
 
   test('warns as a usage limit runs out', () => {

@@ -271,6 +271,17 @@ export function applyTaskUpdate(list: PlanItem[], change: TaskUpdate): PlanItem[
   })
 }
 
+export function mergeSlices(slices: readonly ContextSlice[]): ContextSlice[] {
+  const merged: ContextSlice[] = []
+  for (const slice of slices) {
+    const name = slice.name.toLowerCase().startsWith('mcp') ? 'MCP' : slice.name
+    const existing = merged.find(item => item.name === name)
+    if (existing === undefined) merged.push({ ...slice, name })
+    else existing.tokens += slice.tokens
+  }
+  return merged
+}
+
 export function contextCells(slices: ContextSlice[], max: number, width: number): { color: string; count: number }[] {
   if (max <= 0 || width <= 0) return []
   const cells: { color: string; count: number }[] = []
