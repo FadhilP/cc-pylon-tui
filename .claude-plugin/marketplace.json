@@ -1,0 +1,6 @@
+{
+  "name": "cc-pylon-tui",
+  "owner": { "name": "FadhilP" },
+  "description": "pylon-tui, a calmer terminal UI mod for Claude Code.",
+  "plugins": [{ "name": "pylon-tui", "source": "./" }]
+}
