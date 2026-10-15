@@ -22,7 +22,7 @@ import {
   withLabel,
 } from './text'
 import type { FileToolResult, TaskUpdate } from './text'
-import { bandView, changeDetail, foldHead, paneView, turnView } from './views'
+import { changeDetail, foldHead, paneView, turnView } from './views'
 import type { PaneModel } from './views'
 
 const PANE = 'pylon-tui-session'
@@ -108,11 +108,6 @@ function activeAgents(list: readonly AgentInfo[]): AgentRow[] {
   return list
     .filter(agent => ACTIVE_AGENT_STATUS.has(agent.status))
     .map(agent => ({ id: agent.id, description: agent.description, type: agent.type }))
-}
-
-function hasBandContent(model: PaneModel): boolean {
-  const hasWork = model.plan.length > 0 || model.changes.length > 0 || model.agents.length > 0
-  return hasWork || model.facts.branch !== null
 }
 
 export const register: Register = on => {
@@ -289,14 +284,6 @@ export const register: Register = on => {
         <Code format="diff" source={patch} path={result.filePath} />
       </Box>
     )
-  })
-
-  on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
-    if (e.props.hasSurvey) return next(e)
-    if (await read($, isPaneOpen)) return next(e)
-    const model = await read($, paneData)
-    if (!hasBandContent(model)) return next(e)
-    return bandView($.ui.resolve(e), model, e.props.bodyColumns)
   })
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {

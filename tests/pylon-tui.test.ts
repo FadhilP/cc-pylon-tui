@@ -47,15 +47,6 @@ const PANE_PROPS = {
   view: {},
 }
 
-const BAND_PROPS = {
-  hasSurvey: false,
-  isWorking: false,
-  maxRows: 8,
-  bodyColumns: 100,
-  scroll: { offset: 0, bodyRows: 7 },
-  view: {},
-}
-
 describe('text helpers', () => {
   test('counts added and removed lines of a patch', () => {
     expect(countChange(EDIT_RESULT)).toEqual({ added: 2, removed: 1 })
@@ -165,17 +156,6 @@ describe('session pane', () => {
       await ui.press({ key })
       expect(await ui.find({ type: 'Code' })).toBeDefined()
       await ui.press({ key })
-    }
-  })
-
-  test('shows the band above the prompt while the pane is closed', async ($, on) => {
-    on('tool.call', { tool: 'Edit' }, () => ({ result: EDIT_RESULT }))
-    await $.tool.call({ tool: 'Edit', file_path: EDIT_RESULT.filePath, old_string: 'a', new_string: 'b' })
-
-    for (const surface of ['terminal', 'desktop'] as const) {
-      const ui = await $.ui.mount({ plugin: PLUGIN, surface, component: 'AbovePrompt', props: BAND_PROPS })
-      expect(await ui.find({ type: 'Text', text: '1 file changed' })).toBeDefined()
-      expect(await ui.find({ type: 'Text', text: '/dock opens the pane' })).toBeDefined()
     }
   })
 })

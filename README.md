@@ -3,7 +3,6 @@
 A Claude Code mod for a calmer terminal UI:
 
 - A docked **Session** pane: directory, branch, cost and usage limits, model, context bar, plan, changed files with diffs, and background agents. Toggle it with `/dock`.
-- A one-line band above the prompt when the pane is closed.
 - Folded rows for reads, searches and edits.
 - A turn summary line: time, duration, files changed and the total diff.
 - Spinner labels that say what Claude is doing.

@@ -294,8 +294,3 @@ export function contextCells(slices: ContextSlice[], max: number, width: number)
   }
   return cells
 }
-
-export function usedPercent(tokens: number | null, window: number | null): number | null {
-  if (tokens === null || window === null || window <= 0) return null
-  return Math.round((tokens / window) * 100)
-}

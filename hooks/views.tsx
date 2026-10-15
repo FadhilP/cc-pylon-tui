@@ -1,7 +1,7 @@
 import type { Elements, RenderElement, RenderSurface } from 'claude-code'
 
 import type { AgentRow, FileChange, PlanItem, SessionFacts, TurnSummary } from '../types'
-import { contextCells, formatTokens, plural, turnParts, usageParts, usedPercent } from './text'
+import { contextCells, formatTokens, plural, turnParts, usageParts } from './text'
 
 export type Els = Pick<Elements[RenderSurface], 'Box' | 'Text' | 'Button' | 'Code'>
 
@@ -171,27 +171,6 @@ export function paneView(els: Els, model: PaneModel, width: number, onSelect: (p
       {planSection(els, model.plan)}
       {changesSection(els, model.changes, model.selectedFile, onSelect)}
       {backgroundSection(els, model.agents)}
-    </Box>
-  )
-}
-
-export function bandView(els: Els, model: PaneModel, width: number): RenderElement {
-  const { Box, Text } = els
-  const done = model.plan.filter(item => item.status === 'completed').length
-  const percent = usedPercent(model.facts.contextTokens, model.facts.contextWindow)
-  return (
-    <Box flexDirection="row" columnGap={2} width={width}>
-      {model.facts.branch !== null && <Text weight="semibold">{model.facts.branch}</Text>}
-      {model.plan.length > 0 && <Text>Plan {done} of {model.plan.length}</Text>}
-      {model.changes.length > 0 && <Text>{plural(model.changes.length, 'file')} changed</Text>}
-      {percent !== null && <Text>context {percent}%</Text>}
-      {model.agents.length > 0 && (
-        <Text>
-          <Text color="permission">◆</Text> {plural(model.agents.length, 'agent')}
-        </Text>
-      )}
-      <Box flexGrow={1} />
-      <Text dimColor wrap="truncate-end">/dock opens the pane</Text>
     </Box>
   )
 }
