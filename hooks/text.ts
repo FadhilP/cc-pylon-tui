@@ -15,7 +15,7 @@ export type FileToolResult = {
   structuredPatch: Hunk[]
 }
 
-export type GroupCall = { tool: string; input: unknown; isErrored: boolean }
+export type GroupCall = { tool: string }
 
 export type TaskUpdate = { taskId: string; subject?: string; status?: PlanStatus | 'deleted' }
 
@@ -24,7 +24,7 @@ export const MAIN_LOOP = 'main'
 const MAX_FILES = 50
 const MAX_PATCH_LINES = 400
 const LABEL_MAX = 60
-const SHOWN_FILES = 3
+const SHOWN_TOOLS = 3
 // TurnDuration props carry no turn id, so a row is matched to its summary by duration.
 const TURN_MATCH_MS = 1500
 
@@ -163,45 +163,21 @@ export function matchTurn(list: TurnSummary[], durationMs: number): TurnSummary 
   return best
 }
 
-type CallKind = 'read' | 'search' | 'command' | 'other'
-
-function kindOf(tool: string): CallKind {
-  if (tool === 'Read') return 'read'
-  if (SEARCH_TOOLS.has(tool)) return 'search'
-  if (tool === 'Bash' || tool === 'PowerShell') return 'command'
-  return 'other'
-}
-
 function readPath(input: unknown): string | null {
   if (typeof input !== 'object' || input === null) return null
   const path = (input as Record<string, unknown>).file_path
   return typeof path === 'string' ? path : null
 }
 
-export function groupSummary(calls: readonly GroupCall[], isActive: boolean): { title: string; detail: string } {
-  const files: string[] = []
-  const counts: Record<CallKind, number> = { read: 0, search: 0, command: 0, other: 0 }
-  let failed = 0
-  for (const call of calls) {
-    const kind = kindOf(call.tool)
-    counts[kind] += 1
-    if (call.isErrored) failed += 1
-    const path = kind === 'read' ? readPath(call.input) : null
-    if (path !== null && !files.includes(baseName(path))) files.push(baseName(path))
-  }
+function shortToolName(tool: string): string {
+  return (tool.split('__').at(-1) ?? tool).toLowerCase()
+}
 
-  const verb = isActive ? 'Exploring' : 'Explored'
-  const title = files.length > 0 ? `${verb} ${plural(files.length, 'file')}` : verb
-  const hidden = files.length - SHOWN_FILES
-  const detail = [
-    ...files.slice(0, SHOWN_FILES),
-    hidden > 0 ? `+${hidden}` : null,
-    counts.search > 0 ? plural(counts.search, 'search', 'searches') : null,
-    counts.command > 0 ? plural(counts.command, 'command') : null,
-    counts.other > 0 ? plural(counts.other, 'other call') : null,
-    failed > 0 ? `${failed} failed` : null,
-  ].filter(part => part !== null)
-  return { title, detail: detail.join(', ') }
+export function groupSummary(calls: readonly GroupCall[]): { title: string; detail: string } {
+  const latestFirst = [...new Set(calls.map(call => shortToolName(call.tool)).reverse())]
+  const shown = latestFirst.slice(0, SHOWN_TOOLS).reverse().join(' · ')
+  const hidden = latestFirst.length - SHOWN_TOOLS
+  return { title: plural(calls.length, 'command'), detail: hidden > 0 ? `${shown} +${hidden}` : shown }
 }
 
 function firstLine(text: unknown): string | null {

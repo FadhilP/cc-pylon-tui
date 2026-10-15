@@ -116,14 +116,11 @@ describe('text helpers', () => {
     expect(matchTurn(list, 10_000)).toBeUndefined()
   })
 
-  test('summarises a group of reads and searches', () => {
-    const calls = [
-      { tool: 'Read', input: { file_path: '/repo/src/upload.ts' }, isErrored: false },
-      { tool: 'Read', input: { file_path: '/repo/src/redis.ts' }, isErrored: false },
-      { tool: 'Grep', input: { pattern: 'app.use' }, isErrored: false },
-    ]
-    expect(groupSummary(calls, false)).toEqual({ title: 'Explored 2 files', detail: 'upload.ts, redis.ts, 1 search' })
-    expect(groupSummary(calls, true).title).toBe('Exploring 2 files')
+  test('summarises a group by its latest distinct tools', () => {
+    const calls = ['Read', 'Grep', 'Read', 'Bash', 'mcp__github__search_code', 'Bash'].map(tool => ({ tool }))
+    expect(groupSummary(calls)).toEqual({ title: '6 commands', detail: 'read · search_code · bash +1' })
+    expect(groupSummary(['Glob', 'Read', 'Grep', 'Bash', 'Read'].map(tool => ({ tool }))).detail).toBe('grep · bash · read +1')
+    expect(groupSummary([{ tool: 'Read' }])).toEqual({ title: '1 command', detail: 'read' })
   })
 
   test('labels the spinner by loop', () => {
@@ -190,7 +187,7 @@ describe('transcript rows', () => {
     }
     for (const surface of ['terminal', 'desktop'] as const) {
       const ui = await $.ui.mount({ plugin: PLUGIN, surface, component: 'ToolGroup', props })
-      expect((await ui.find({ type: 'Button', key: 'fold' }))?.text).toMatch(/Explored 1 file/)
+      expect((await ui.find({ type: 'Button', key: 'fold' }))?.text).toMatch(/2 commands +read · grep/)
     }
   })
 

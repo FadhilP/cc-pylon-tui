@@ -246,7 +246,7 @@ export const register: Register = on => {
     const { Box, Text } = els
     const member = memberOf(isOpen, e)
     const isShown = await read($, member)
-    const { title, detail } = groupSummary(e.props.calls, e.props.isActive)
+    const { title, detail } = groupSummary(e.props.calls)
     const head = foldHead(els, isShown, title, <Text dimColor>{detail}</Text>, () => void update($, member, value => !value))
     if (!isShown) return head
     const rows = await next({ ...e, props: { ...e.props, isExpanded: true } })
