@@ -117,7 +117,6 @@ function hasBandContent(model: PaneModel): boolean {
 
 export const register: Register = on => {
   let refreshNow: (() => void) | undefined
-  let hasTriedAutoOpen = false
   let turn = newTurn()
 
   function addToTurn(path: string, result: FileToolResult): void {
@@ -154,6 +153,8 @@ export const register: Register = on => {
     refreshNow = () => void refreshAll().catch(() => undefined)
     refreshNow()
     $.clock.every(REFRESH_MS, refreshNow)
+    // The engine holds an unasked pane undrawn until the terminal is wide enough.
+    void $.ui.open({ id: PANE, title: PANE_TITLE }).then(() => refreshNow?.(), () => undefined)
     return next(e)
   })
 
@@ -292,11 +293,6 @@ export const register: Register = on => {
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     if (e.props.hasSurvey) return next(e)
-    const shouldAutoOpen = !hasTriedAutoOpen && e.viewport?.isFullscreen === true
-    if (shouldAutoOpen) {
-      hasTriedAutoOpen = true
-      void $.ui.open({ id: PANE, title: PANE_TITLE }).then(() => refreshNow?.(), () => undefined)
-    }
     if (await read($, isPaneOpen)) return next(e)
     const model = await read($, paneData)
     if (!hasBandContent(model)) return next(e)
