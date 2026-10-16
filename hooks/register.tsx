@@ -174,11 +174,15 @@ export const register: Register = on => {
 
   on('turn.start', ($, e, next) => {
     if (e.agentId === undefined) turn = newTurn()
+    else refreshNow?.()
     return next(e)
   })
 
   on('turn.complete', async ($, e, next) => {
-    if (e.agentId !== undefined) return next(e)
+    if (e.agentId !== undefined) {
+      refreshNow?.()
+      return next(e)
+    }
     const summary = {
       finishedAt: await $.clock.now(),
       durationMs: e.durationMs,
@@ -320,7 +324,8 @@ export const register: Register = on => {
   })
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
-    const model = await read($, paneData)
-    return paneView($.ui.resolve(e), model, e.props.bodyColumns, path => void update($, selectedFile, () => path))
+    const model = { ...(await read($, paneData)), viewedAgent: e.props.view.agentId }
+    const onView = (agentId: string | undefined) => void $.ui.view(agentId === undefined ? {} : { agentId })
+    return paneView($.ui.resolve(e), model, e.props.bodyColumns, path => void update($, selectedFile, () => path), onView)
   })
 }

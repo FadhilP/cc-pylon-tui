@@ -11,9 +11,12 @@ export type PaneModel = {
   changes: FileChange[]
   agents: AgentRow[]
   selectedFile: string | null
+  viewedAgent?: string
 }
 
 type Press = () => void
+
+type ViewAgent = (agentId: string | undefined) => void
 
 const PANE_PADDING = 2
 
@@ -146,22 +149,39 @@ function changesSection(els: Els, list: FileChange[], selected: string | null, o
   )
 }
 
-function backgroundSection(els: Els, list: AgentRow[]): RenderElement {
+function viewButton(els: Els, key: string, isViewed: boolean, onPress: Press, label: RenderElement | string): RenderElement {
+  const { Button, Text } = els
+  return (
+    <Button key={key} plain onPress={onPress}>
+      <Text color={isViewed ? 'claude' : 'permission'}>{isViewed ? '▸' : '◆'}</Text> {label}
+    </Button>
+  )
+}
+
+function backgroundSection(els: Els, list: AgentRow[], viewed: string | undefined, onView: ViewAgent): RenderElement {
   const { Box, Text } = els
+  const hasNav = list.length > 0 || viewed !== undefined
   return (
     <Box flexDirection="column">
       {heading(els, 'Background', list.length > 0 ? `${list.length} running` : '')}
       {list.length === 0 && <Text dimColor>Nothing running</Text>}
-      {list.map(agent => (
-        <Text wrap="truncate-end">
-          <Text color="permission">◆</Text> {agent.description} <Text dimColor>{agent.type}</Text>
-        </Text>
-      ))}
+      {hasNav && viewButton(els, 'agent:main', viewed === undefined, () => onView(undefined), 'Main conversation')}
+      {list.map(agent =>
+        viewButton(
+          els,
+          `agent:${agent.id}`,
+          agent.id === viewed,
+          () => onView(agent.id),
+          <Text wrap="truncate-end">
+            {agent.description} <Text dimColor>{agent.type}</Text>
+          </Text>,
+        ),
+      )}
     </Box>
   )
 }
 
-export function paneView(els: Els, model: PaneModel, width: number, onSelect: (path: string | null) => void): RenderElement {
+export function paneView(els: Els, model: PaneModel, width: number, onSelect: (path: string | null) => void, onView: ViewAgent): RenderElement {
   const { Box } = els
   const bodyWidth = Math.max(1, width - PANE_PADDING)
   return (
@@ -170,7 +190,7 @@ export function paneView(els: Els, model: PaneModel, width: number, onSelect: (p
       {contextSection(els, model.facts, bodyWidth)}
       {planSection(els, model.plan)}
       {changesSection(els, model.changes, model.selectedFile, onSelect)}
-      {backgroundSection(els, model.agents)}
+      {backgroundSection(els, model.agents, model.viewedAgent, onView)}
     </Box>
   )
 }

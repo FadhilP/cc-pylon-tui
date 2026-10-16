@@ -178,6 +178,29 @@ describe('session pane', () => {
   })
 })
 
+describe('agent navigation', () => {
+  test('switches the main view to a background agent and back', async ($, on) => {
+    const agent = { id: 'agent-1', description: 'Scout the hooks', type: 'Explore', status: 'running' as const }
+    const clock = mock.clock(on, { now: 0 })
+    on('command.register', () => ({ value: { command: 'dock' } }))
+    on('session.start', ($, e) => ({ cwd: e.cwd }))
+    for (const name of ['session.usage', 'session.model', 'process.run', 'ui.panes', 'ui.open'] as const) on(name, () => ({ deny: 'not in this test' }))
+    on('agent.list', () => ({ value: [agent] }))
+    const views: unknown[] = []
+    on('ui.view', ($, e) => {
+      views.push({ ...e })
+      return { value: {} }
+    })
+    await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+    await clock.settle()
+
+    const ui = await $.ui.mount({ plugin: PLUGIN, surface: 'terminal', component: 'Pane', requestId: PANE, props: PANE_PROPS })
+    await ui.press({ key: 'agent:agent-1' })
+    await ui.press({ key: 'agent:main' })
+    expect(views).toEqual([{ agentId: 'agent-1' }, {}])
+  })
+})
+
 describe('transcript rows', () => {
   test('folds an edit row to one line with its counts', async $ => {
     const props = {
