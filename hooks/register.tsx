@@ -100,7 +100,8 @@ function mergeFacts(
     model: model ?? current.model ?? null,
     costUsd: usage?.cost?.usd ?? current.costUsd,
     rateLimits: usage?.rateLimits.map(limit => ({ kind: limit.kind, percentUsed: limit.percentUsed })) ?? current.rateLimits ?? [],
-    contextTokens: usage?.context.tokens ?? current.contextTokens,
+    // After a compaction `tokens` stays at the last reply's count until the next one; the breakdown is current.
+    contextTokens: breakdown?.totalTokens ?? usage?.context.tokens ?? current.contextTokens,
     contextWindow: compactAt ?? usage?.context.window ?? current.contextWindow,
     breakdownMax: compactAt ?? breakdown?.rawMaxTokens ?? current.breakdownMax,
     slices: breakdown === undefined ? current.slices : slices,
@@ -153,6 +154,18 @@ export const register: Register = on => {
     $.clock.every(REFRESH_MS, refreshNow)
     // The engine holds an unasked pane undrawn until the terminal is wide enough.
     void $.ui.open({ id: PANE, title: PANE_TITLE }).then(() => refreshNow?.(), () => undefined)
+    return next(e)
+  })
+
+  const withTitle = (title: string | undefined) => (current: SessionFacts) => ({ ...current, title: title ?? current.title })
+
+  on('classic.SessionStart', async ($, e, next) => {
+    await update($, facts, withTitle(e.session_title))
+    return next(e)
+  })
+
+  on('classic.UserPromptSubmit', async ($, e, next) => {
+    await update($, facts, withTitle(e.session_title))
     return next(e)
   })
 

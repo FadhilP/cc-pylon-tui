@@ -176,6 +176,13 @@ describe('session pane', () => {
       await ui.press({ key })
     }
   })
+
+  test('heads the session section with the session title', async ($, on) => {
+    on('classic.UserPromptSubmit', () => ({}))
+    await $.classic.UserPromptSubmit({ prompt: 'hi', session_title: 'Fix the pane title' })
+    const ui = await $.ui.mount({ plugin: PLUGIN, surface: 'terminal', component: 'Pane', requestId: PANE, props: PANE_PROPS })
+    expect(await ui.find({ type: 'Text', text: 'Fix the pane title' })).toBeDefined()
+  })
 })
 
 describe('agent navigation', () => {

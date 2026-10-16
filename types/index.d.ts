@@ -26,6 +26,7 @@ export type RateLimit = { kind: string; percentUsed: number }
 export type SessionFacts = {
   cwd: string
   project: string
+  title?: string | null
   branch: string | null
   model?: string | null
   costUsd: number | null

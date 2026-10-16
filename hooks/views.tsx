@@ -66,7 +66,7 @@ function sessionSection(els: Els, facts: SessionFacts): RenderElement {
   const { Box } = els
   return (
     <Box flexDirection="column">
-      {heading(els, 'Session', facts.project)}
+      {heading(els, 'Session', facts.title ?? facts.project)}
       {factRow(els, 'Directory', facts.cwd)}
       {factRow(els, 'Branch', facts.branch ?? 'no git repository')}
       {factRow(els, 'Cost/Usage', usageValue(els, facts))}
