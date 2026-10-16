@@ -1,6 +1,7 @@
 import { describe, expect, mock, test } from 'claude-code/testing'
 
 import {
+  bashEditTitle,
   countChange,
   formatDuration,
   groupSummary,
@@ -36,6 +37,19 @@ const EDIT_RESULT = {
   ],
   userModified: false,
   replaceAll: false,
+}
+
+const BASH_OUTPUT = {
+  stdout: '',
+  stderr: '',
+  interrupted: false,
+  bashEditDiff: {
+    files: [
+      { filePath: '/repo/x.txt', hunks: [{ oldStart: 1, oldLines: 2, newStart: 1, newLines: 2, lines: [' a', '-b', '+B'] }] },
+      { filePath: '/repo/n.txt', created: true as const, hunks: [{ oldStart: 0, oldLines: 0, newStart: 1, newLines: 1, lines: ['+new'] }] },
+    ],
+    moreFiles: 0,
+  },
 }
 
 const PANE_PROPS = {
@@ -133,6 +147,13 @@ describe('text helpers', () => {
     expect(labelFor(withLabel(state, 'main', null), 'main')).toBeUndefined()
   })
 
+  test('titles a shell command by the files it changed', () => {
+    const files = BASH_OUTPUT.bashEditDiff.files
+    expect(bashEditTitle({ files, moreFiles: 0 }, '/repo')).toBe('Edited 2 files')
+    expect(bashEditTitle({ files: files.slice(1), moreFiles: 0 }, '/repo')).toBe('Created n.txt')
+    expect(bashEditTitle({ files: files.slice(1), moreFiles: 3 }, '/repo')).toBe('Edited 4 files')
+  })
+
   test('adds context to commands that use changed files', () => {
     const list = [{ path: 'test/rateLimit.test.ts', isNew: true, added: 52, removed: 0, patch: '' }]
     expect(noticeFor('npm test -- rateLimit.test.ts', list)).toBe('Uses test/rateLimit.test.ts, which Claude created this session.')
@@ -174,6 +195,22 @@ describe('transcript rows', () => {
       expect(head?.text).toMatch(/Edited \/repo\/src\/routes\/upload\.ts/)
       expect(head?.text).toMatch(/\+2/)
     }
+  })
+
+  test('folds a shell command that edited files', async $ => {
+    const props = {
+      tool_use_id: 'toolu_9',
+      tool: 'Bash',
+      input: { command: "sed -i 's/b/B/' x.txt" },
+      isRunning: false,
+      isErrored: false,
+      isInterrupted: false,
+      output: BASH_OUTPUT,
+    }
+    const ui = await $.ui.mount({ plugin: PLUGIN, surface: 'terminal', component: 'ToolUse', requestId: 'toolu_9', props })
+    const head = await ui.find({ type: 'Button', key: 'fold' })
+    expect(head?.text).toMatch(/Edited 2 files/)
+    expect(head?.text).toMatch(/\+2/)
   })
 
   test('folds a group of reads to one line', async $ => {

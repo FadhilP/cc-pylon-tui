@@ -6,6 +6,9 @@ import {
   MAIN_LOOP,
   applyTaskUpdate,
   baseName,
+  bashEditCount,
+  bashEditTitle,
+  bashEdits,
   countChange,
   groupSummary,
   isFileToolResult,
@@ -284,6 +287,36 @@ export const register: Register = on => {
         <Code format="diff" source={patch} path={result.filePath} />
       </Box>
     )
+  })
+
+  on('ui.render', { component: 'ToolUse' }, async ($, e, next) => {
+    const props = e.props
+    const isSettled = !props.isRunning && !props.isErrored && !props.isInterrupted
+    const edits = props.tool === 'Bash' && isSettled ? bashEdits(props.output) : null
+    if (edits === null) return next(e)
+    const els = $.ui.resolve(e)
+    const member = memberOf(isOpen, e)
+    const isShown = await read($, member)
+    const { cwd } = await read($, facts)
+    const { added, removed } = bashEditCount(edits)
+    const title = bashEditTitle(edits, cwd)
+    const head = foldHead(els, isShown, title, changeDetail(els, added, removed), () => void update($, member, value => !value))
+    if (!isShown) return head
+    const { Box } = els
+    return (
+      <Box flexDirection="column">
+        {head}
+        {await next(e)}
+      </Box>
+    )
+  })
+
+  // The engine's own Bash result draws the diff, so an open fold shows it unchanged.
+  on('ui.render', { component: 'ToolResult' }, async ($, e, next) => {
+    const isBashEdit = e.props.tool === 'Bash' && !e.props.isErrored && bashEdits(e.props.output) !== null
+    if (!isBashEdit || (await read($, memberOf(isOpen, e)))) return next(e)
+    const { Box } = $.ui.resolve(e)
+    return <Box />
   })
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {

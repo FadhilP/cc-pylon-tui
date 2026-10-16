@@ -17,6 +17,10 @@ export type FileToolResult = {
 
 export type GroupCall = { tool: string }
 
+export type BashEditFile = { filePath: string; hunks: Hunk[]; created?: true; deleted?: true }
+
+export type BashEdits = { files: BashEditFile[]; moreFiles: number }
+
 export type TaskUpdate = { taskId: string; subject?: string; status?: PlanStatus | 'deleted' }
 
 export const MAIN_LOOP = 'main'
@@ -97,6 +101,37 @@ export function mergeChange(list: FileChange[], path: string, result: FileToolRe
   }
   const merged = { ...existing, added: existing.added + added, removed: existing.removed + removed, patch }
   return list.map(change => (change.path === path ? merged : change))
+}
+
+export function bashEdits(output: unknown): BashEdits | null {
+  if (typeof output !== 'object' || output === null) return null
+  const diff = (output as { bashEditDiff?: Partial<BashEdits> }).bashEditDiff
+  if (!Array.isArray(diff?.files) || diff.files.length === 0) return null
+  return { files: diff.files, moreFiles: diff.moreFiles ?? 0 }
+}
+
+export function bashEditCount(edits: BashEdits): { added: number; removed: number } {
+  let added = 0
+  let removed = 0
+  for (const file of edits.files) {
+    const change = countChange({ filePath: file.filePath, structuredPatch: file.hunks })
+    added += change.added
+    removed += change.removed
+  }
+  return { added, removed }
+}
+
+function editVerb(file: BashEditFile): string {
+  if (file.created) return 'Created'
+  if (file.deleted) return 'Deleted'
+  return 'Edited'
+}
+
+export function bashEditTitle(edits: BashEdits, cwd: string): string {
+  const total = edits.files.length + edits.moreFiles
+  const only = total === 1 ? edits.files[0] : undefined
+  if (only === undefined) return `Edited ${plural(total, 'file')}`
+  return `${editVerb(only)} ${relativePath(only.filePath, cwd)}`
 }
 
 export function formatDuration(ms: number): string {

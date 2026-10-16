@@ -198,7 +198,7 @@ export function turnView(els: Els, summary: TurnSummary): RenderElement {
   const { Box, Text } = els
   const [clock, ...rest] = turnParts(summary)
   return (
-    <Box flexDirection="row" columnGap={2}>
+    <Box flexDirection="row" columnGap={2} marginTop={1}>
       <Text>
         <Text color={summary.isAborted ? 'warning' : 'success'}>●</Text> <Text dimColor>{clock}</Text>
       </Text>
