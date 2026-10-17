@@ -1,15 +1,21 @@
 import { describe, expect, mock, test } from 'claude-code/testing'
 
 import {
+  afterAppend,
   bashEditTitle,
+  bashEdits,
   countChange,
+  countInRun,
+  fitLabel,
   formatDuration,
   groupSummary,
+  joinRun,
   labelFor,
   matchTurn,
   noticeFor,
   patchText,
   relativePath,
+  runOf,
   spinnerLabel,
   turnParts,
   limitLevel,
@@ -147,11 +153,43 @@ describe('text helpers', () => {
     expect(labelFor(withLabel(state, 'main', null), 'main')).toBeUndefined()
   })
 
+  test('fits the spinner label to the window width', () => {
+    const label = `Running ${'x'.repeat(200)}`
+    expect(fitLabel(label, 120)).toHaveLength(70)
+    expect(fitLabel(label, 120).endsWith('…')).toBe(true)
+    expect(fitLabel(label, 30)).toHaveLength(20)
+    expect(fitLabel('Running ls', 120)).toBe('Running ls')
+    expect(fitLabel(label, undefined)).toBe(label)
+  })
+
+  test('runs consecutive edits of one file until another row draws', () => {
+    const files = new Set(['Edit', 'Write'])
+    let state = joinRun({ path: null, runs: [] }, 'a', 'src/x.ts')
+    state = countInRun(state, 'a', { added: 2, removed: 1 })
+    state = afterAppend(state, [{ type: 'tool_result', tool_use_id: 'a' }], files)
+    state = afterAppend(state, [{ type: 'thinking' }, { type: 'tool_use', name: 'Edit' }], files)
+    state = countInRun(joinRun(state, 'b', 'src/x.ts'), 'b', { added: 3, removed: 0 })
+    expect(runOf(state, 'b')).toEqual({ ids: ['a', 'b'], added: 5, removed: 1 })
+
+    expect(runOf(joinRun(state, 'c', 'src/y.ts'), 'c')?.ids).toEqual(['c'])
+    const afterText = afterAppend(state, [{ type: 'text', text: 'Next.' }], files)
+    expect(runOf(joinRun(afterText, 'c', 'src/x.ts'), 'c')?.ids).toEqual(['c'])
+    const afterError = afterAppend(joinRun(state, 'c', 'src/x.ts'), [{ type: 'tool_result', tool_use_id: 'c', is_error: true }], files)
+    expect(runOf(afterError, 'c')).toBeUndefined()
+    expect(afterError.path).toBeNull()
+  })
+
   test('titles a shell command by the files it changed', () => {
     const files = BASH_OUTPUT.bashEditDiff.files
     expect(bashEditTitle({ files, moreFiles: 0 }, '/repo')).toBe('Edited 2 files')
     expect(bashEditTitle({ files: files.slice(1), moreFiles: 0 }, '/repo')).toBe('Created n.txt')
     expect(bashEditTitle({ files: files.slice(1), moreFiles: 3 }, '/repo')).toBe('Edited 4 files')
+  })
+
+  test('reads a shell edit the engine lists by path alone', () => {
+    const edits = bashEdits({ bashEditDiff: { files: [], moreFiles: 1, changedFiles: ['/repo/src/cli.ts'] } })
+    expect(edits === null ? null : bashEditTitle(edits, '/repo')).toBe('Edited src/cli.ts')
+    expect(bashEdits({ bashEditDiff: { files: [], moreFiles: 0, changedFiles: [] } })).toBeNull()
   })
 
   test('adds context to commands that use changed files', () => {
@@ -225,6 +263,39 @@ describe('transcript rows', () => {
       expect(head?.text).toMatch(/Edited \/repo\/src\/routes\/upload\.ts/)
       expect(head?.text).toMatch(/\+2/)
     }
+  })
+
+  test('folds consecutive edits of one file into the first row in fullscreen', async ($, on) => {
+    on('tool.call', { tool: 'Edit' }, () => ({ result: EDIT_RESULT }))
+    for (const id of ['toolu_a', 'toolu_b']) {
+      await $.tool.call({ tool: 'Edit', tool_use_id: id, file_path: EDIT_RESULT.filePath, old_string: 'a', new_string: 'b' })
+    }
+    const rowProps = (id: string) => ({
+      tool_use_id: id,
+      tool: 'Edit',
+      input: { file_path: EDIT_RESULT.filePath },
+      isRunning: false,
+      isErrored: false,
+      isInterrupted: false,
+      output: EDIT_RESULT,
+    })
+    const mount = (id: string, isFullscreen: boolean) =>
+      $.ui.mount({
+        plugin: PLUGIN,
+        surface: 'terminal',
+        component: 'ToolUse',
+        requestId: id,
+        viewport: { columns: 120, rows: 40, isFullscreen },
+        props: rowProps(id),
+      })
+
+    const head = await (await mount('toolu_a', true)).find({ type: 'Button', key: 'fold' })
+    expect(head?.text).toMatch(/×2/)
+    expect(head?.text).toMatch(/\+4/)
+    const hidden = await mount('toolu_b', true)
+    expect(await hidden.find({ type: 'Button', key: 'fold' })).toBeUndefined()
+    await hidden.unmount()
+    expect((await (await mount('toolu_b', false)).find({ type: 'Button', key: 'fold' }))?.text).not.toMatch(/×/)
   })
 
   test('folds a shell command that edited files', async $ => {

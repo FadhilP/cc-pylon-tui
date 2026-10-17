@@ -1,4 +1,4 @@
-import type { ContextSlice, FileChange, PlanItem, PlanStatus, RateLimit, RunningState, TurnSummary } from '../types'
+import type { ContextSlice, EditRun, EditRuns, FileChange, PlanItem, PlanStatus, RateLimit, RunningState, TurnSummary } from '../types'
 
 export type Hunk = {
   oldStart: number
@@ -27,8 +27,11 @@ export const MAIN_LOOP = 'main'
 
 const MAX_FILES = 50
 const MAX_PATCH_LINES = 400
-const LABEL_MAX = 60
 const SHOWN_TOOLS = 3
+const MAX_EDIT_RUNS = 200
+// Room the spinner line keeps for its glyph and the engine's `(31s · ↓ 2.2k tokens · thought for 8s)`.
+const SPINNER_RESERVED = 50
+const SPINNER_MIN = 20
 // TurnDuration props carry no turn id, so a row is matched to its summary by duration.
 const TURN_MATCH_MS = 1500
 
@@ -105,9 +108,12 @@ export function mergeChange(list: FileChange[], path: string, result: FileToolRe
 
 export function bashEdits(output: unknown): BashEdits | null {
   if (typeof output !== 'object' || output === null) return null
-  const diff = (output as { bashEditDiff?: Partial<BashEdits> }).bashEditDiff
-  if (!Array.isArray(diff?.files) || diff.files.length === 0) return null
-  return { files: diff.files, moreFiles: diff.moreFiles ?? 0 }
+  const diff = (output as { bashEditDiff?: Partial<BashEdits> & { changedFiles?: string[] } }).bashEditDiff
+  if (Array.isArray(diff?.files) && diff.files.length > 0) return { files: diff.files, moreFiles: diff.moreFiles ?? 0 }
+  // The engine lists a binary, mode-only or too-large change by path alone, with no hunks.
+  const changed = diff?.changedFiles
+  if (!Array.isArray(changed) || changed.length === 0) return null
+  return { files: changed.map(filePath => ({ filePath, hunks: [] })), moreFiles: 0 }
 }
 
 export function bashEditCount(edits: BashEdits): { added: number; removed: number } {
@@ -220,7 +226,7 @@ function firstLine(text: unknown): string | null {
   return text.split('\n')[0]?.trim() || null
 }
 
-function labelText(tool: string, input: Record<string, unknown>, cwd: string): string | null {
+export function spinnerLabel(tool: string, input: Record<string, unknown>, cwd: string): string | null {
   const path = readPath(input)
   const file = path === null ? null : relativePath(path, cwd)
   if (tool === 'Bash' || tool === 'PowerShell') {
@@ -238,17 +244,63 @@ function labelText(tool: string, input: Record<string, unknown>, cwd: string): s
   return null
 }
 
-export function spinnerLabel(tool: string, input: Record<string, unknown>, cwd: string): string | null {
-  const text = labelText(tool, input, cwd)
-  if (text === null || text.length <= LABEL_MAX) return text
-  return `${text.slice(0, LABEL_MAX - 1)}…`
-}
-
 export function labelFor(state: RunningState, requestId: string): string | undefined {
   const own = state.labels[requestId]
   if (own !== undefined) return own
   const isSubagent = state.agentIds.includes(requestId)
   return isSubagent ? undefined : state.labels[MAIN_LOOP]
+}
+
+export function fitLabel(label: string, columns: number | undefined): string {
+  if (columns === undefined) return label
+  const max = Math.max(SPINNER_MIN, columns - SPINNER_RESERVED)
+  return label.length <= max ? label : `${label.slice(0, max - 1)}…`
+}
+
+export function runOf(state: EditRuns, id: string): EditRun | undefined {
+  return state.runs.find(run => run.ids.includes(id))
+}
+
+export function joinRun(state: EditRuns, id: string, path: string): EditRuns {
+  const last = state.runs.at(-1)
+  if (state.path !== path || last === undefined) {
+    return { path, runs: [...state.runs, { ids: [id], added: 0, removed: 0 }].slice(-MAX_EDIT_RUNS) }
+  }
+  return { path, runs: [...state.runs.slice(0, -1), { ...last, ids: [...last.ids, id] }] }
+}
+
+export function countInRun(state: EditRuns, id: string, count: { added: number; removed: number }): EditRuns {
+  const runs = state.runs.map(run =>
+    run.ids.includes(id) ? { ...run, added: run.added + count.added, removed: run.removed + count.removed } : run,
+  )
+  return { ...state, runs }
+}
+
+function dropFromRun(state: EditRuns, id: string): EditRuns {
+  const runs = state.runs.map(run => ({ ...run, ids: run.ids.filter(other => other !== id) })).filter(run => run.ids.length > 0)
+  return { ...state, runs }
+}
+
+function keepsRun(block: { type: string; [field: string]: unknown }, state: EditRuns, fileTools: ReadonlySet<string>): boolean {
+  if (block.type === 'thinking' || block.type === 'redacted_thinking') return true
+  if (block.type === 'tool_use') return fileTools.has(String(block.name))
+  if (block.type !== 'tool_result') return false
+  const isInOpenRun = state.path !== null && state.runs.at(-1)?.ids.includes(String(block.tool_use_id)) === true
+  return isInOpenRun
+}
+
+// Any row that would draw between two edits ends their run; a failed edit draws its own row.
+export function afterAppend(
+  state: EditRuns,
+  blocks: readonly { type: string; [field: string]: unknown }[],
+  fileTools: ReadonlySet<string>,
+): EditRuns {
+  let next = state
+  for (const block of blocks) {
+    if (block.type === 'tool_result' && block.is_error === true) next = dropFromRun(next, String(block.tool_use_id))
+  }
+  if (blocks.every(block => keepsRun(block, next, fileTools))) return next
+  return next.path === null ? next : { ...next, path: null }
 }
 
 export function withLabel(state: RunningState, loop: string, label: string | null): RunningState {

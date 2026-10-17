@@ -1,18 +1,22 @@
 import { atom, derive, memberOf, read, update } from 'claude-code'
 import type { AgentInfo, ProcessRunResult, Register, SessionUsage } from 'claude-code'
 
-import type { AgentRow, PlanStatus, SessionFacts } from '../types'
+import type { AgentRow, EditRun, PlanStatus, SessionFacts } from '../types'
 import {
   MAIN_LOOP,
+  afterAppend,
   applyTaskUpdate,
   baseName,
   bashEditCount,
   bashEditTitle,
   bashEdits,
   countChange,
+  countInRun,
+  fitLabel,
   groupSummary,
   isFileToolResult,
   isNewFile,
+  joinRun,
   labelFor,
   matchTurn,
   mergeChange,
@@ -21,6 +25,7 @@ import {
   patchText,
   planFromTodos,
   relativePath,
+  runOf,
   spinnerLabel,
   withLabel,
 } from './text'
@@ -40,6 +45,7 @@ const changes = atom({ plugin: 'pylon-tui', key: 'changes' } as const, [])
 const turns = atom({ plugin: 'pylon-tui', key: 'turns' } as const, [])
 const agents = atom({ plugin: 'pylon-tui', key: 'agents' } as const, [])
 const running = atom({ plugin: 'pylon-tui', key: 'running' } as const, { labels: {}, agentIds: [] })
+const editRuns = atom({ plugin: 'pylon-tui', key: 'editRuns' } as const, { path: null, runs: [] })
 const isPaneOpen = atom({ plugin: 'pylon-tui', key: 'isPaneOpen' } as const, false)
 const selectedFile = atom({ plugin: 'pylon-tui', key: 'selectedFile' } as const, null)
 const isOpen = atom({ plugin: 'pylon-tui', key: 'isOpen' } as const, false)
@@ -106,6 +112,16 @@ function mergeFacts(
     breakdownMax: compactAt ?? breakdown?.rawMaxTokens ?? current.breakdownMax,
     slices: breakdown === undefined ? current.slices : slices,
   }
+}
+
+// The main screen prints rows to scrollback and cannot redraw them, so runs fold only in fullscreen.
+async function foldedRun(
+  $: Parameters<typeof read>[0],
+  e: { viewport?: { isFullscreen?: boolean }; props: { tool_use_id: string } },
+): Promise<EditRun | undefined> {
+  if (e.viewport?.isFullscreen !== true) return undefined
+  const run = runOf(await read($, editRuns), e.props.tool_use_id)
+  return run !== undefined && run.ids.length > 1 ? run : undefined
 }
 
 function activeAgents(list: readonly AgentInfo[]): AgentRow[] {
@@ -221,6 +237,10 @@ export const register: Register = on => {
     if (notice !== null) $.ui.notice(e.tool_use_id, notice)
 
     await update($, running, state => withLabel(state, loop, spinnerLabel(tool, input, cwd)))
+    const editPath = typeof input.file_path === 'string' ? relativePath(input.file_path, cwd) : null
+    if (isMainLoop && FILE_TOOLS.has(tool) && editPath !== null) {
+      await update($, editRuns, state => joinRun(state, e.tool_use_id, editPath))
+    }
     try {
       const ran = await next(e)
       const result = ran.isError === true ? undefined : ran.result
@@ -229,6 +249,7 @@ export const register: Register = on => {
         const path = relativePath(result.filePath, cwd)
         await update($, changes, list => mergeChange(list, path, result))
         if (isMainLoop) addToTurn(path, result)
+        if (isMainLoop) await update($, editRuns, state => countInRun(state, e.tool_use_id, countChange(result)))
       }
       if (isMainLoop && tool === 'TodoWrite' && Array.isArray(input.todos)) {
         const todos = input.todos as { content: string; status: PlanStatus }[]
@@ -247,10 +268,15 @@ export const register: Register = on => {
     }
   })
 
+  on('session.append', async ($, e, next) => {
+    if (e.agentId === undefined) await update($, editRuns, state => afterAppend(state, e.message.content, FILE_TOOLS))
+    return next(e)
+  })
+
   on('ui.render', { component: 'Spinner' }, async ($, e, next) => {
     const label = labelFor(await read($, running), e.requestId)
     if (label === undefined) return next(e)
-    return next({ ...e, props: { ...e.props, message: label } })
+    return next({ ...e, props: { ...e.props, message: fitLabel(label, e.viewport?.columns) } })
   })
 
   on('ui.render', { component: 'TurnDuration' }, async ($, e, next) => {
@@ -284,11 +310,14 @@ export const register: Register = on => {
     const result = props.output
     if (!FILE_TOOLS.has(props.tool) || !isSettled || !isFileToolResult(result)) return next(e)
     const els = $.ui.resolve(e)
+    const run = await foldedRun($, e)
+    if (run !== undefined && run.ids[0] !== props.tool_use_id) return <els.Box />
     const member = memberOf(isOpen, e)
     const { cwd } = await read($, facts)
-    const { added, removed } = countChange(result)
+    const { added, removed } = run ?? countChange(result)
     const verb = isNewFile(result) ? 'Created' : 'Edited'
-    const title = `${verb} ${relativePath(result.filePath, cwd)}`
+    const times = run === undefined ? '' : ` ×${run.ids.length}`
+    const title = `${verb} ${relativePath(result.filePath, cwd)}${times}`
     return foldHead(els, await read($, member), title, changeDetail(els, added, removed), () => void update($, member, value => !value))
   })
 
@@ -296,7 +325,8 @@ export const register: Register = on => {
     const result = e.props.output
     if (!FILE_TOOLS.has(e.props.tool) || e.props.isErrored || !isFileToolResult(result)) return next(e)
     const { Box, Code, Text } = $.ui.resolve(e)
-    if (!(await read($, memberOf(isOpen, e)))) return <Box />
+    const head = (await foldedRun($, e))?.ids[0] ?? e.requestId
+    if (!(await read($, memberOf(isOpen, { requestId: head })))) return <Box />
     const patch = patchText(result)
     if (patch === '') return <Text dimColor>No changes</Text>
     return (

@@ -206,6 +206,7 @@ export function foldHead(els: Els, isOpen: boolean, title: string, detail: Rende
 
 export function changeDetail(els: Els, added: number, removed: number): RenderElement {
   const { Text } = els
+  if (added === 0 && removed === 0) return <Text />
   return (
     <Text>
       <Text color="success">+{added}</Text>

@@ -39,6 +39,10 @@ export type SessionFacts = {
 
 export type AgentRow = { id: string; description: string; type: string }
 
+export type EditRun = { ids: string[]; added: number; removed: number }
+
+export type EditRuns = { path: string | null; runs: EditRun[] }
+
 export type RunningState = {
   labels: Record<string, string>
   agentIds: string[]
@@ -53,6 +57,7 @@ declare module 'claude-code' {
       facts: SessionFacts
       agents: AgentRow[]
       running: RunningState
+      editRuns: EditRuns
       isPaneOpen: boolean
       selectedFile: string | null
       isOpen: StateFamily<boolean>

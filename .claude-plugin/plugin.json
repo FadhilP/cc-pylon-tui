@@ -1,6 +1,6 @@
 {
   "name": "pylon-tui",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "description": "A calmer transcript: folded tool rows, turn summaries and a docked session pane.",
   "author": { "name": "FadhilP" },
   "types": "./types/index.d.ts"
