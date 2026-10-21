@@ -265,7 +265,7 @@ describe('transcript rows', () => {
     }
   })
 
-  test('folds consecutive edits of one file into the first row in fullscreen', async ($, on) => {
+  test('folds consecutive edits of one file into the first row in fullscreen, rows still marked running too', async ($, on) => {
     on('tool.call', { tool: 'Edit' }, () => ({ result: EDIT_RESULT }))
     for (const id of ['toolu_a', 'toolu_b']) {
       await $.tool.call({ tool: 'Edit', tool_use_id: id, file_path: EDIT_RESULT.filePath, old_string: 'a', new_string: 'b' })
@@ -274,7 +274,7 @@ describe('transcript rows', () => {
       tool_use_id: id,
       tool: 'Edit',
       input: { file_path: EDIT_RESULT.filePath },
-      isRunning: false,
+      isRunning: true,
       isErrored: false,
       isInterrupted: false,
       output: EDIT_RESULT,

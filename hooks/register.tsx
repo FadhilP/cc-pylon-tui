@@ -306,7 +306,8 @@ export const register: Register = on => {
 
   on('ui.render', { component: 'ToolUse' }, async ($, e, next) => {
     const props = e.props
-    const isSettled = !props.isRunning && !props.isErrored && !props.isInterrupted
+    // A parallel call's row keeps isRunning after its result lands; a stored output means it resolved.
+    const isSettled = !props.isErrored && !props.isInterrupted
     const result = props.output
     if (!FILE_TOOLS.has(props.tool) || !isSettled || !isFileToolResult(result)) return next(e)
     const els = $.ui.resolve(e)
@@ -338,7 +339,7 @@ export const register: Register = on => {
 
   on('ui.render', { component: 'ToolUse' }, async ($, e, next) => {
     const props = e.props
-    const isSettled = !props.isRunning && !props.isErrored && !props.isInterrupted
+    const isSettled = !props.isErrored && !props.isInterrupted
     const edits = props.tool === 'Bash' && isSettled ? bashEdits(props.output) : null
     if (edits === null) return next(e)
     const els = $.ui.resolve(e)
