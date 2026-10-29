@@ -173,7 +173,7 @@ function backgroundSection(els: Els, list: AgentRow[], viewed: string | undefine
           agent.id === viewed,
           () => onView(agent.id),
           <Text wrap="truncate-end">
-            {agent.description} <Text dimColor>{agent.type}</Text>
+            {agent.description} <Text dimColor>{agent.model === undefined ? agent.type : `${agent.type} · ${agent.model}`}</Text>
           </Text>,
         ),
       )}

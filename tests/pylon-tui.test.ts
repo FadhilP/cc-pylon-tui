@@ -2,8 +2,10 @@ import { describe, expect, mock, test } from 'claude-code/testing'
 
 import {
   afterAppend,
+  aiTitle,
   bashEditTitle,
   bashEdits,
+  committedPaths,
   countChange,
   countInRun,
   fitLabel,
@@ -82,6 +84,20 @@ describe('text helpers', () => {
     expect(relativePath('/repo/src/a.ts', '/repo')).toBe('src/a.ts')
     expect(relativePath('C:\\Code\\Repo\\src\\a.ts', 'c:\\code\\repo')).toBe('src/a.ts')
     expect(relativePath('/other/a.ts', '/repo')).toBe('/other/a.ts')
+    expect(relativePath('C:\\Code\\Repo\\src\\a.ts', '/c/Code/Repo')).toBe('src/a.ts')
+  })
+
+  test('finds the changes a commit or revert settled', () => {
+    const paths = ['src/a.ts', 'src/b.ts', 'new.ts', 'ignored.log']
+    expect(committedPaths(paths, 'src/a.ts\0src/b.ts\0', 'src/b.ts\0')).toEqual(['src/a.ts'])
+  })
+
+  test('takes the latest generated session title unless the session was renamed', () => {
+    const line = (title: string) => JSON.stringify({ type: 'ai-title', aiTitle: title, sessionId: 's' })
+    const transcript = [line('Old title'), '{"type":"user"}', line('New title'), ''].join('\n')
+    expect(aiTitle(transcript)).toBe('New title')
+    expect(aiTitle(`${transcript}{"type":"custom-title","customTitle":"Mine"}\n`)).toBeUndefined()
+    expect(aiTitle('{"type":"user"}\n')).toBeUndefined()
   })
 
   test('formats durations', () => {
@@ -243,6 +259,31 @@ describe('agent navigation', () => {
     await ui.press({ key: 'agent:agent-1' })
     await ui.press({ key: 'agent:main' })
     expect(views).toEqual([{ agentId: 'agent-1' }, {}])
+  })
+
+  test('shows the model each background agent was spawned on', async ($, on) => {
+    const agent = { id: 'agent-1', description: 'Scout the hooks', type: 'Explore', status: 'running' as const }
+    const clock = mock.clock(on, { now: 0 })
+    on('command.register', () => ({ value: { command: 'dock' } }))
+    on('session.start', ($, e) => ({ cwd: e.cwd }))
+    for (const name of ['session.usage', 'session.model', 'process.run', 'ui.panes', 'ui.open'] as const) on(name, () => ({ deny: 'not in this test' }))
+    on('agent.list', () => ({ value: [agent] }))
+    on('agent.spawn', () => ({ model: 'claude-haiku-5-5', agentId: 'agent-1' }))
+    await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+    await $.agent.spawn({
+      tool_use_id: 'toolu_spawn',
+      prompt: 'Scout',
+      description: 'Scout the hooks',
+      subagentType: 'Explore',
+      provider: { plugin: 'engine', tier: 'core' },
+      parentModel: 'claude-opus-5-5',
+      background: true,
+      fork: false,
+    })
+    await clock.advance(15_000)
+
+    const ui = await $.ui.mount({ plugin: PLUGIN, surface: 'terminal', component: 'Pane', requestId: PANE, props: PANE_PROPS })
+    expect((await ui.find({ type: 'Button', key: 'agent:agent-1' }))?.text).toMatch(/Explore · claude-haiku-5-5/)
   })
 })
 

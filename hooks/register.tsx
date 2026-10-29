@@ -1,19 +1,22 @@
 import { atom, derive, memberOf, read, update } from 'claude-code'
-import type { AgentInfo, ProcessRunResult, Register, SessionUsage } from 'claude-code'
+import type { AgentInfo, CoreEngineInterface, ProcessRunResult, Register, SessionUsage } from 'claude-code'
 
 import type { AgentRow, EditRun, PlanStatus, SessionFacts } from '../types'
 import {
   MAIN_LOOP,
   afterAppend,
+  aiTitle,
   applyTaskUpdate,
   baseName,
   bashEditCount,
   bashEditTitle,
   bashEdits,
+  committedPaths,
   countChange,
   countInRun,
   fitLabel,
   groupSummary,
+  isAbsolutePath,
   isFileToolResult,
   isNewFile,
   joinRun,
@@ -44,6 +47,7 @@ const plan = atom({ plugin: 'pylon-tui', key: 'plan' } as const, [])
 const changes = atom({ plugin: 'pylon-tui', key: 'changes' } as const, [])
 const turns = atom({ plugin: 'pylon-tui', key: 'turns' } as const, [])
 const agents = atom({ plugin: 'pylon-tui', key: 'agents' } as const, [])
+const agentModels = atom({ plugin: 'pylon-tui', key: 'agentModels' } as const, {})
 const running = atom({ plugin: 'pylon-tui', key: 'running' } as const, { labels: {}, agentIds: [] })
 const editRuns = atom({ plugin: 'pylon-tui', key: 'editRuns' } as const, { path: null, runs: [] })
 const isPaneOpen = atom({ plugin: 'pylon-tui', key: 'isPaneOpen' } as const, false)
@@ -87,6 +91,18 @@ function branchFrom(run: ProcessRunResult | undefined, current: string | null): 
   return run.stdout.trim() || 'detached HEAD'
 }
 
+// A commit or a revert leaves a tracked file matching HEAD, so its change is no longer pending.
+async function dropCommitted($: Pick<CoreEngineInterface, 'state' | 'process'>, root: string): Promise<void> {
+  const paths = (await read($, changes)).map(change => change.path).filter(path => !isAbsolutePath(path))
+  if (root === '' || paths.length === 0) return
+  const git = (args: string[]) =>
+    $.process.run(['git', '--literal-pathspecs', ...args, '--', ...paths], { cwd: root, timeoutMs: 3000 })
+  const [tracked, dirty] = await Promise.all([git(['ls-files', '-z']), git(['diff', 'HEAD', '--name-only', '--relative', '-z'])])
+  if (tracked.exitCode !== 0 || dirty.exitCode !== 0) return
+  const committed = committedPaths(paths, tracked.stdout, dirty.stdout)
+  if (committed.length > 0) await update($, changes, list => list.filter(change => !committed.includes(change.path)))
+}
+
 function mergeFacts(
   current: SessionFacts,
   usage: SessionUsage | undefined,
@@ -124,14 +140,15 @@ async function foldedRun(
   return run !== undefined && run.ids.length > 1 ? run : undefined
 }
 
-function activeAgents(list: readonly AgentInfo[]): AgentRow[] {
+function activeAgents(list: readonly AgentInfo[], models: Record<string, string>): AgentRow[] {
   return list
     .filter(agent => ACTIVE_AGENT_STATUS.has(agent.status))
-    .map(agent => ({ id: agent.id, description: agent.description, type: agent.type }))
+    .map(agent => ({ id: agent.id, description: agent.description, type: agent.type, model: models[agent.id] }))
 }
 
 export const register: Register = on => {
   let refreshNow: (() => void) | undefined
+  let transcriptPath: string | undefined
   let turn = newTurn()
 
   function addToTurn(path: string, result: FileToolResult): void {
@@ -143,7 +160,9 @@ export const register: Register = on => {
 
   on('session.start', async ($, e, next) => {
     await $.command.register({ name: 'dock', description: 'Show or hide the session pane' })
-    await update($, facts, current => ({ ...current, cwd: e.cwd, project: baseName(e.cwd) }))
+    // e.cwd follows the shell's `cd`; the root stays where the session started.
+    const root = await $.session.root().catch(() => e.cwd)
+    await update($, facts, current => ({ ...current, cwd: root, project: baseName(root) }))
 
     const refreshAll = async (): Promise<void> => {
       const [usage, model, branchRun, agentList, panes] = await Promise.all([
@@ -158,8 +177,10 @@ export const register: Register = on => {
       const nextFacts = mergeFacts(current, usage, branchFrom(branchRun, current.branch), model)
       if (!sameValue(current, nextFacts)) await update($, facts, () => nextFacts)
 
-      const rows = agentList === undefined ? undefined : activeAgents(agentList)
+      const rows = agentList === undefined ? undefined : activeAgents(agentList, await read($, agentModels))
       if (rows !== undefined && !sameValue(rows, await read($, agents))) await update($, agents, () => rows)
+
+      await dropCommitted($, nextFacts.cwd).catch(() => undefined)
 
       const isPlaced = panes?.some(pane => pane.id === PANE && pane.isPlaced)
       if (isPlaced !== undefined && isPlaced !== (await read($, isPaneOpen))) await update($, isPaneOpen, () => isPlaced)
@@ -176,11 +197,13 @@ export const register: Register = on => {
   const withTitle = (title: string | undefined) => (current: SessionFacts) => ({ ...current, title: title ?? current.title })
 
   on('classic.SessionStart', async ($, e, next) => {
+    transcriptPath = e.transcript_path ?? transcriptPath
     await update($, facts, withTitle(e.session_title))
     return next(e)
   })
 
   on('classic.UserPromptSubmit', async ($, e, next) => {
+    transcriptPath = e.transcript_path ?? transcriptPath
     await update($, facts, withTitle(e.session_title))
     return next(e)
   })
@@ -199,6 +222,14 @@ export const register: Register = on => {
     const closed = await next(e)
     await update($, isPaneOpen, () => false)
     return closed
+  })
+
+  // $.agent.list() carries no model, so keep the one each spawn resolved to.
+  on('agent.spawn', async ($, e, next) => {
+    const spawned = await next(e)
+    const { agentId, model } = spawned
+    if (agentId !== undefined && model !== undefined) await update($, agentModels, models => ({ ...models, [agentId]: model }))
+    return spawned
   })
 
   on('turn.start', ($, e, next) => {
@@ -221,6 +252,11 @@ export const register: Register = on => {
       isAborted: e.isAborted,
     }
     await update($, turns, list => [...list, summary].slice(-MAX_TURNS))
+    // The engine names the session during the first turn, after its prompt hook has run.
+    if (transcriptPath !== undefined) {
+      const title = await $.fs.read(transcriptPath).then(aiTitle).catch(() => undefined)
+      await update($, facts, withTitle(title))
+    }
     refreshNow?.()
     return next(e)
   })

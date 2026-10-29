@@ -37,7 +37,7 @@ export type SessionFacts = {
   slices: ContextSlice[]
 }
 
-export type AgentRow = { id: string; description: string; type: string }
+export type AgentRow = { id: string; description: string; type: string; model?: string }
 
 export type EditRun = { ids: string[]; added: number; removed: number }
 
@@ -56,6 +56,7 @@ declare module 'claude-code' {
       turns: TurnSummary[]
       facts: SessionFacts
       agents: AgentRow[]
+      agentModels: Record<string, string>
       running: RunningState
       editRuns: EditRuns
       isPaneOpen: boolean

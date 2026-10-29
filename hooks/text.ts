@@ -47,10 +47,19 @@ export function baseName(path: string): string {
   return parts.at(-1) ?? path
 }
 
+// Git Bash reports `C:\x` as `/c/x`.
+function slashPath(path: string): string {
+  return path.replaceAll('\\', '/').replace(/^\/([a-z])\//i, '$1:/')
+}
+
+export function isAbsolutePath(path: string): boolean {
+  return /^(\/|[a-z]:\/)/i.test(slashPath(path))
+}
+
 export function relativePath(path: string, cwd: string): string {
-  const file = path.replaceAll('\\', '/')
+  const file = slashPath(path)
   if (cwd === '') return file
-  const root = `${cwd.replaceAll('\\', '/').replace(/\/+$/, '')}/`
+  const root = `${slashPath(cwd).replace(/\/+$/, '')}/`
   const isInside = file.toLowerCase().startsWith(root.toLowerCase())
   return isInside ? file.slice(root.length) : file
 }
@@ -104,6 +113,22 @@ export function mergeChange(list: FileChange[], path: string, result: FileToolRe
   }
   const merged = { ...existing, added: existing.added + added, removed: existing.removed + removed, patch }
   return list.map(change => (change.path === path ? merged : change))
+}
+
+// `tracked` and `dirty` are `git ls-files -z` and `git diff HEAD --name-only -z` output for `paths`.
+export function committedPaths(paths: readonly string[], tracked: string, dirty: string): string[] {
+  const trackedPaths = new Set(tracked.split('\0'))
+  const dirtyPaths = new Set(dirty.split('\0'))
+  return paths.filter(path => trackedPaths.has(path) && !dirtyPaths.has(path))
+}
+
+// The engine appends an `ai-title` line each time it names the session; a `/rename` title outranks them.
+export function aiTitle(transcript: string): string | undefined {
+  if (transcript.includes('"type":"custom-title"')) return undefined
+  const line = transcript.split('\n').findLast(row => row.startsWith('{"type":"ai-title"'))
+  if (line === undefined) return undefined
+  const title = (JSON.parse(line) as { aiTitle?: unknown }).aiTitle
+  return typeof title === 'string' ? title : undefined
 }
 
 export function bashEdits(output: unknown): BashEdits | null {
